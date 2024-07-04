@@ -12,17 +12,58 @@ struct Party {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // TODO: be able to succinctly explain what these are
-    let degree: usize = 4096;
-    let plaintext_modulus: u64 = 4096;
-    let moduli: Vec<u64> = vec![0xffffee001, 0xffffc4001, 0x1ffffe0001];
+    println!("# Practical FHE Workshop: Secret Ballot");
 
-    let num_voters = 1000;
-    let num_parties = 10;
+    // The number of votes that will be cast.
+    //
+    // Try changing this number to see how the system scales with the number of voters.
+    let num_votes: usize = 1000;
+    println!("\tVotes: {num_votes}");
 
-    println!("# FHE Voting Workshop Example");
-    println!("\tVotes: {num_voters}");
+    // The number of parties that will generate a shared key and decrypt the result.
+    //
+    // In production, this would be the number of independent entities that need to
+    // collaborate to decrypt the result. In this example, we obviously control all
+    // of the parties, but we'll still simulate the process.
+    //
+    // Try changing this number to see how the system scales with the number of parties.
+    let num_parties: usize = 10;
     println!("\tParties: {num_parties}");
+
+    // let default_params: Vec<Arc<bfv::BfvParameters>> =
+    //     bfv::BfvParameters::default_parameters_128(bits_needed);
+    // let params: Arc<bfv::BfvParameters> = default_params[1].clone();
+
+    // Degree: 2048
+    // Plaintext Modulus: 1032193
+    // Moduli: [18014398492704769]
+
+    // Set the parameters for the FHE scheme
+
+    // The degree of the polynomial modulus, usually denoted as `n` in the literature,
+    // it determines the size of the ciphertext. A larger degree increases the security,
+    // but will also increase the computation and storage.
+    let degree: usize = 2048;
+    println!("\tDegree: {degree}");
+
+    // The plaintext modulus, usually denoted as `t` in the literature, it determines
+    // the size of the plaintext space. Plaintexts are typically represented as integers
+    // modulo this value. A larger plaintext modulus allows for larger plaintexts.
+    // However, larger plaintext modulus also increase noise growth per operation,
+    // which can limit the number of computations that can be performed on the ciphertexts.
+    // In our case, each vote will be a single bit and we'll sum each vote to produce the tally.
+    // The upper bound on the plaintext size is equal to the number of votes cast, so a plaintext
+    // modulus of 1032193 is sufficient for a little over 1M votes.
+    let plaintext_modulus: u64 = 1032193;
+    println!("\tPlaintext Modulus: {plaintext_modulus}");
+
+    // The moduli for the ciphertexts, usually denoted as `q` in the literature, are used to
+    // control the noise in the ciphertexts, using a technique called "modulus switching".
+    // Each modulus in the vector corresponds to a level in the computation, and computations
+    // are performed modulo the current level's modulus. A larger modulus allows for more
+    // computations, but also increases the computation and storage costs.
+    let moduli: Vec<u64> = vec![0x3FFFFFFF000001];
+    println!("\tModuli: {:?}", moduli);
 
     let params = bfv::BfvParametersBuilder::new()
         .set_degree(degree)
@@ -31,10 +72,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build_arc()
         .unwrap();
 
-    // TODO: know what this is 😅
+    // Generate the Common Random Polynomial (CRP)
+    //
+    // The CRP is used by each of the party members to generate their public key shares.
+    // In this example, we're just grabbing some randomness seeded by the system.
+    // In a production environment, we need to ensure that no party can control or predict this randomness.
     let crp: CommonRandomPoly = CommonRandomPoly::new(&params, &mut thread_rng())?;
 
     // Create the parties and their keys
+    //
+    // Each party generates a secret key share and a public key share using the CRP.
     let mut parties: Vec<Party> = Vec::with_capacity(num_parties);
     for _ in 0..num_parties {
         let sk_share: SecretKey = SecretKey::random(&params, &mut thread_rng());
@@ -44,16 +91,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Aggregate the public keys
+    //
+    // The public keys are aggregated to create a single public key that can be used to encrypt
+    // the votes. This is done by summing the public key shares together.
+    //
+    // Note: because the public key shares are generated using the same CRP, the public key
+    // shares are compatible and can be summed together.
+    //
+    // Note: because the shared public key is the sum of the public key shares, the
+    // the public key shares can be aggregated in any order. Meaning the public key shares can
+    // be generated asynchronously and aggregated in parallel as keys are published.
     let pk: PublicKey = parties.iter().map(|p| p.pk_share.clone()).aggregate()?;
 
     // Create the plaintext votes
+    //
+    // Each voter will cast a 1 for yes or a 0 for no. We'll simulate this by generating
+    // a random bit for each voter.
     let dist: Uniform<u64> = Uniform::new_inclusive(0, 1);
-    let votes: Vec<u64> = (0..num_voters)
+    let votes: Vec<u64> = (0..num_votes)
         .map(|_| dist.sample(&mut thread_rng()))
         .collect();
 
     // Encrypt the votes
-    let mut encrypted_votes: Vec<Ciphertext> = Vec::with_capacity(num_voters);
+    //
+    // Each vote is encrypted using the shared public key.
+    //
+    // Note: In a production environment, the votes would be encrypted independently by each
+    // of the voters and only the ciphertexts would be published.
+    let mut encrypted_votes: Vec<Ciphertext> = Vec::with_capacity(num_votes);
     for vote in votes.iter() {
         let pt = Plaintext::try_encode(&[*vote], Encoding::poly(), &params)?;
         let ct = pk.try_encrypt(&pt, &mut thread_rng())?;
@@ -61,6 +126,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Tally the votes
+    //
+    // The votes are tallied by summing the encrypted vote ciphertexts together.
+    // The result is an encrypted tally of the votes.
+    // This is the real magic of homomorphic encryption, we can perform operations on the
+    // ciphertexts that correspond to operations on the plaintexts!
     let mut sum = Ciphertext::zero(&params);
     for vote in encrypted_votes.iter() {
         sum += vote;
@@ -68,6 +138,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tally: Arc<Ciphertext> = Arc::new(sum);
 
     // Decrypt the tally
+    //
+    // The tally is decrypted by each of the parties to produce a decryption share.
+    // The decryption shares are then aggregated to produce the plaintext tally.
+    //
+    // Note: As with the public key shares, aggregation of the decryption shares simply involves
+    // summing them together. This means the decryption shares can be aggregated in any order
+    // and can be generated asynchronously and aggregated in parallel as shares are published.
     let mut decryption_shares: Vec<DecryptionShare> = Vec::with_capacity(num_parties);
     for party in parties {
         let sh = DecryptionShare::new(&party.sk_share, &tally, &mut thread_rng())?;
@@ -77,12 +154,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tally_vec: Vec<u64> = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
     let tally_result: u64 = tally_vec[0];
 
-    println!("Vote result = {} / {}", tally_result, num_voters);
+    println!("\tVote result = {} / {}", tally_result, num_votes);
 
+    // Check the result
     let expected_tally = votes.iter().sum();
     assert_eq!(tally_result, expected_tally);
-
-    // result = ((2*a + M - b) mod M) mod 2
 
     Ok(())
 }
