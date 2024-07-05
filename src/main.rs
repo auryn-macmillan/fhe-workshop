@@ -3,9 +3,10 @@ use fhe::{
     mbfv::{AggregateIter, CommonRandomPoly, DecryptionShare, PublicKeyShare},
 };
 use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
+use indicatif::{ProgressBar, ProgressStyle};
 use rand::{distributions::Uniform, prelude::Distribution, thread_rng};
 use rayon::prelude::*;
-use std::{error::Error, sync::Arc};
+use std::{error::Error, sync::Arc, time::Duration};
 use stopwatch::Stopwatch;
 
 struct Party {
@@ -14,7 +15,10 @@ struct Party {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let pb: ProgressBar = ProgressBar::new_spinner();
+    pb.set_style(ProgressStyle::default_spinner());
     let main_sw: Stopwatch = Stopwatch::start_new();
+
     println!("\n\x1b[1mPractical FHE Workshop: Secret Ballot\x1b[0m");
 
     // The number of votes that will be cast.
@@ -141,6 +145,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // Note: encrypting votes is what takes the bulk of the execution time in this example.
     // In a production environment, this cost would be distributed across the voters.
+    pb.enable_steady_tick(Duration::from_millis(100));
     let mut sw: Stopwatch = Stopwatch::start_new();
     let results: Vec<_> = votes
         .par_iter()
@@ -152,8 +157,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         .collect();
 
     let encrypted_votes: Result<Vec<_>, _> = results.into_iter().collect();
+    pb.finish_and_clear();
     println!("\t\x1b[1mTime to Encrypt Votes:\x1b[0m {:#?}", sw.elapsed());
 
+    pb.enable_steady_tick(Duration::from_millis(100));
     sw.restart();
     // Tally the votes
     //
@@ -166,6 +173,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         sum += vote;
     }
     let tally: Arc<Ciphertext> = Arc::new(sum);
+    pb.finish_and_clear();
     println!("\t\x1b[1mTally Execution time:\x1b[0m {:#?}", sw.elapsed());
 
     // Decrypt the tally
@@ -176,6 +184,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Note: As with the public key shares, aggregation of the decryption shares simply involves
     // summing them together. This means the decryption shares can be aggregated in any order
     // and can be generated asynchronously and aggregated in parallel as shares are published.
+    pb.enable_steady_tick(Duration::from_millis(100));
     sw.restart();
     let decryption_shares: Result<Vec<DecryptionShare>, _> = parties
         .par_iter()
@@ -187,7 +196,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let pt: Plaintext = decryption_shares.unwrap().into_iter().aggregate()?;
     let tally_vec: Vec<u64> = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
     let tally_result: u64 = tally_vec[0];
-
+    pb.finish_and_clear();
     println!("\t\x1b[1mTally Decryption time:\x1b[0m {:#?}", sw.elapsed());
 
     // Print the result
@@ -199,6 +208,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         "\t\x1b[1mTotal Execution time:\x1b[0m {:#?}",
         main_sw.elapsed()
     );
+
+    pb.finish_and_clear();
 
     // Check that the results match the expected result
     // Note: this is not possible in production, since we would not know the plaintext inputs.
