@@ -54,7 +54,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     // In our case, each vote will be a single bit and we'll sum each vote to produce the tally.
     // The upper bound on the plaintext size is equal to the number of votes cast, so a plaintext
     // modulus of 1032193 is sufficient for a little over 1M votes.
-    let plaintext_modulus: u64 = 1032193;
+    let plaintext_modulus: u64 = match num_votes {
+        1..=999 => 1009,
+        1000..=9999 => 10007,
+        10000..=99999 => 100003,
+        100000..=199999 => 200003,
+        200000..=299999 => 300007,
+        300000..=399999 => 400009,
+        400000..=499999 => 500009,
+        500000..=599999 => 600011,
+        600000..=699999 => 700001,
+        700000..=799999 => 800011,
+        800000..=899999 => 900001,
+        _ => 1032193,
+    };
+    // 1032193;
     println!("\tPlaintext Modulus: {plaintext_modulus}");
 
     // The moduli for the ciphertexts, usually denoted as `q` in the literature, are used to
