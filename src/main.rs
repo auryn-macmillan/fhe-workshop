@@ -6,8 +6,11 @@ use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
 use indicatif::{ProgressBar, ProgressStyle};
 use rand::{distributions::Uniform, prelude::Distribution, thread_rng};
 use rayon::prelude::*;
-use std::{error::Error, sync::Arc, time::Duration};
-use stopwatch::Stopwatch;
+use std::{
+    error::Error,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 struct Party {
     sk_share: SecretKey,
@@ -17,14 +20,14 @@ struct Party {
 fn main() -> Result<(), Box<dyn Error>> {
     let pb: ProgressBar = ProgressBar::new_spinner();
     pb.set_style(ProgressStyle::default_spinner());
-    let main_sw: Stopwatch = Stopwatch::start_new();
+    let main: Instant = Instant::now();
 
     println!("\n\x1b[1mPractical FHE Workshop: Secret Ballot\x1b[0m");
 
     // The number of votes that will be cast.
     //
     // Try changing this number to see how the system scales with the number of voters.
-    let num_votes: usize = 10000;
+    let num_votes: usize = 1000;
     println!("\t\x1b[1mVotes:\x1b[0m {num_votes}");
 
     // The number of parties that will generate a shared key and decrypt the result.
@@ -35,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // Try changing this number to see how the system scales with the number of parties.
     let num_parties: usize = 10;
-    println!("\t\x1b[1mParties:\x1b[0m {num_parties}");]
+    println!("\t\x1b[1mParties:\x1b[0m {num_parties}");
 
     // Set the parameters for the FHE scheme
 
@@ -138,7 +141,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Note: encrypting votes is what takes the bulk of the execution time in this example.
     // In a production environment, this cost would be distributed across the voters.
     pb.enable_steady_tick(Duration::from_millis(100));
-    let mut sw: Stopwatch = Stopwatch::start_new();
+    let encryption_timer: Instant = Instant::now();
     let results: Vec<_> = votes
         .par_iter()
         .map(|vote| {
@@ -150,10 +153,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let encrypted_votes: Result<Vec<_>, _> = results.into_iter().collect();
     pb.finish_and_clear();
-    println!("\t\x1b[1mTime to Encrypt Votes:\x1b[0m {:#?}", sw.elapsed());
+    println!(
+        "\t\x1b[1mTime to Encrypt Votes:\x1b[0m {:#?}",
+        encryption_timer.elapsed()
+    );
 
     pb.enable_steady_tick(Duration::from_millis(100));
-    sw.restart();
+    let tally_timer: Instant = Instant::now();
     // Tally the votes
     //
     // The votes are tallied by summing the encrypted vote ciphertexts together.
@@ -166,7 +172,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let tally: Arc<Ciphertext> = Arc::new(sum);
     pb.finish_and_clear();
-    println!("\t\x1b[1mTally Execution time:\x1b[0m {:#?}", sw.elapsed());
+    println!(
+        "\t\x1b[1mTally Execution time:\x1b[0m {:#?}",
+        tally_timer.elapsed()
+    );
 
     // Decrypt the tally
     //
@@ -177,7 +186,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // summing them together. This means the decryption shares can be aggregated in any order
     // and can be generated asynchronously and aggregated in parallel as shares are published.
     pb.enable_steady_tick(Duration::from_millis(100));
-    sw.restart();
+    let decryption_timer: Instant = Instant::now();
     let decryption_shares: Result<Vec<DecryptionShare>, _> = parties
         .par_iter()
         .map(|party| {
@@ -189,7 +198,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tally_vec: Vec<u64> = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
     let tally_result: u64 = tally_vec[0];
     pb.finish_and_clear();
-    println!("\t\x1b[1mTally Decryption time:\x1b[0m {:#?}", sw.elapsed());
+    println!(
+        "\t\x1b[1mTally Decryption time:\x1b[0m {:#?}",
+        decryption_timer.elapsed()
+    );
 
     // Print the result
     println!(
@@ -198,7 +210,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     println!(
         "\t\x1b[1mTotal Execution time:\x1b[0m {:#?}",
-        main_sw.elapsed()
+        main.elapsed()
     );
 
     pb.finish_and_clear();
