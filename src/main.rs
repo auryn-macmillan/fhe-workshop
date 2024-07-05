@@ -6,6 +6,7 @@ use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
 use rand::{distributions::Uniform, prelude::Distribution, thread_rng};
 use rayon::prelude::*;
 use std::{error::Error, sync::Arc};
+use stopwatch::Stopwatch;
 
 struct Party {
     sk_share: SecretKey,
@@ -13,13 +14,14 @@ struct Party {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("# Practical FHE Workshop: Secret Ballot");
+    let main_sw: Stopwatch = Stopwatch::start_new();
+    println!("\n\x1b[1mPractical FHE Workshop: Secret Ballot\x1b[0m");
 
     // The number of votes that will be cast.
     //
     // Try changing this number to see how the system scales with the number of voters.
-    let num_votes: usize = 1000;
-    println!("\tVotes: {num_votes}");
+    let num_votes: usize = 10000;
+    println!("\t\x1b[1mVotes:\x1b[0m {num_votes}");
 
     // The number of parties that will generate a shared key and decrypt the result.
     //
@@ -29,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // Try changing this number to see how the system scales with the number of parties.
     let num_parties: usize = 10;
-    println!("\tParties: {num_parties}");
+    println!("\t\x1b[1mParties:\x1b[0m {num_parties}");
 
     // let default_params: Vec<Arc<bfv::BfvParameters>> =
     //     bfv::BfvParameters::default_parameters_128(bits_needed);
@@ -45,7 +47,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // it determines the size of the ciphertext. A larger degree increases the security,
     // but will also increase the computation and storage.
     let degree: usize = 2048;
-    println!("\tDegree: {degree}");
+    println!("\t\x1b[1mDegree:\x1b[0m {degree}");
 
     // The plaintext modulus, usually denoted as `t` in the literature, it determines
     // the size of the plaintext space. Plaintexts are typically represented as integers
@@ -70,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         _ => 1032193,
     };
     // 1032193;
-    println!("\tPlaintext Modulus: {plaintext_modulus}");
+    println!("\t\x1b[1mPlaintext Modulus:\x1b[0m {plaintext_modulus}");
 
     // The moduli for the ciphertexts, usually denoted as `q` in the literature, are used to
     // control the noise in the ciphertexts, using a technique called "modulus switching".
@@ -78,7 +80,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // are performed modulo the current level's modulus. A larger modulus allows for more
     // computations, but also increases the computation and storage costs.
     let moduli: Vec<u64> = vec![0x3FFFFFFF000001];
-    println!("\tModuli: {:?}", moduli);
+    println!("\t\x1b[1mModuli:\x1b[0m {:?}", moduli);
 
     let params = bfv::BfvParametersBuilder::new()
         .set_degree(degree)
@@ -136,6 +138,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // Note: In a production environment, the votes would be encrypted independently by each
     // of the voters and only the ciphertexts would be published.
+    //
+    // Note: encrypting votes is what takes the bulk of the execution time in this example.
+    // In a production environment, this cost would be distributed across the voters.
+    let mut sw: Stopwatch = Stopwatch::start_new();
     let results: Vec<_> = votes
         .par_iter()
         .map(|vote| {
@@ -146,7 +152,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .collect();
 
     let encrypted_votes: Result<Vec<_>, _> = results.into_iter().collect();
+    println!("\t\x1b[1mTime to Encrypt Votes:\x1b[0m {:#?}", sw.elapsed());
 
+    sw.restart();
     // Tally the votes
     //
     // The votes are tallied by summing the encrypted vote ciphertexts together.
@@ -158,6 +166,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         sum += vote;
     }
     let tally: Arc<Ciphertext> = Arc::new(sum);
+    println!("\t\x1b[1mTally Execution time:\x1b[0m {:#?}", sw.elapsed());
 
     // Decrypt the tally
     //
@@ -167,6 +176,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Note: As with the public key shares, aggregation of the decryption shares simply involves
     // summing them together. This means the decryption shares can be aggregated in any order
     // and can be generated asynchronously and aggregated in parallel as shares are published.
+    sw.restart();
     let decryption_shares: Result<Vec<DecryptionShare>, _> = parties
         .par_iter()
         .map(|party| {
@@ -178,8 +188,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tally_vec: Vec<u64> = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
     let tally_result: u64 = tally_vec[0];
 
+    println!("\t\x1b[1mTally Decryption time:\x1b[0m {:#?}", sw.elapsed());
+
     // Print the result
-    println!("\tVote result = {} / {}", tally_result, num_votes);
+    println!(
+        "\t\x1b[1mVote result:\x1b[0m: {} / {}",
+        tally_result, num_votes
+    );
+    println!(
+        "\t\x1b[1mTotal Execution time:\x1b[0m {:#?}",
+        main_sw.elapsed()
+    );
 
     // Check that the results match the expected result
     // Note: this is not possible in production, since we would not know the plaintext inputs.
