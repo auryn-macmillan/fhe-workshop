@@ -4,6 +4,7 @@ use fhe::{
 };
 use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
 use rand::{distributions::Uniform, prelude::Distribution, thread_rng};
+use rayon::prelude::*;
 use std::{error::Error, sync::Arc};
 
 struct Party {
@@ -96,13 +97,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Create the parties and their keys
     //
     // Each party generates a secret key share and a public key share using the CRP.
-    let mut parties: Vec<Party> = Vec::with_capacity(num_parties);
-    for _ in 0..num_parties {
-        let sk_share: SecretKey = SecretKey::random(&params, &mut thread_rng());
-        let pk_share: PublicKeyShare =
-            PublicKeyShare::new(&sk_share, crp.clone(), &mut thread_rng())?;
-        parties.push(Party { sk_share, pk_share });
-    }
+    let parties: Vec<Party> = (0..num_parties)
+        .into_par_iter()
+        .map(|_| {
+            let sk_share: SecretKey = SecretKey::random(&params, &mut thread_rng());
+            let pk_share: PublicKeyShare =
+                PublicKeyShare::new(&sk_share, crp.clone(), &mut thread_rng()).unwrap();
+            Party { sk_share, pk_share }
+        })
+        .collect();
 
     // Aggregate the public keys
     //
@@ -123,6 +126,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // a random bit for each voter.
     let dist: Uniform<u64> = Uniform::new_inclusive(0, 1);
     let votes: Vec<u64> = (0..num_votes)
+        .into_par_iter()
         .map(|_| dist.sample(&mut thread_rng()))
         .collect();
 
@@ -132,12 +136,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // Note: In a production environment, the votes would be encrypted independently by each
     // of the voters and only the ciphertexts would be published.
-    let mut encrypted_votes: Vec<Ciphertext> = Vec::with_capacity(num_votes);
-    for vote in votes.iter() {
-        let pt = Plaintext::try_encode(&[*vote], Encoding::poly(), &params)?;
-        let ct = pk.try_encrypt(&pt, &mut thread_rng())?;
-        encrypted_votes.push(ct);
-    }
+    let results: Vec<_> = votes
+        .par_iter()
+        .map(|vote| {
+            let pt: Plaintext = Plaintext::try_encode(&[*vote], Encoding::poly(), &params).unwrap();
+            let ct: Ciphertext = pk.try_encrypt(&pt, &mut thread_rng()).unwrap();
+            Ok::<fhe::bfv::Ciphertext, std::io::Error>(ct)
+        })
+        .collect();
+
+    let encrypted_votes: Result<Vec<_>, _> = results.into_iter().collect();
 
     // Tally the votes
     //
@@ -145,8 +153,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // The result is an encrypted tally of the votes.
     // This is the real magic of homomorphic encryption, we can perform operations on the
     // ciphertexts that correspond to operations on the plaintexts!
-    let mut sum = Ciphertext::zero(&params);
-    for vote in encrypted_votes.iter() {
+    let mut sum: Ciphertext = Ciphertext::zero(&params);
+    for vote in encrypted_votes.unwrap().iter() {
         sum += vote;
     }
     let tally: Arc<Ciphertext> = Arc::new(sum);
@@ -159,19 +167,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Note: As with the public key shares, aggregation of the decryption shares simply involves
     // summing them together. This means the decryption shares can be aggregated in any order
     // and can be generated asynchronously and aggregated in parallel as shares are published.
-    let mut decryption_shares: Vec<DecryptionShare> = Vec::with_capacity(num_parties);
-    for party in parties {
-        let sh = DecryptionShare::new(&party.sk_share, &tally, &mut thread_rng())?;
-        decryption_shares.push(sh);
-    }
-    let pt: Plaintext = decryption_shares.into_iter().aggregate()?;
+    let decryption_shares: Result<Vec<DecryptionShare>, _> = parties
+        .par_iter()
+        .map(|party| {
+            let sh = DecryptionShare::new(&party.sk_share, &tally, &mut thread_rng()).unwrap();
+            Ok::<fhe::mbfv::DecryptionShare, std::io::Error>(sh)
+        })
+        .collect();
+    let pt: Plaintext = decryption_shares.unwrap().into_iter().aggregate()?;
     let tally_vec: Vec<u64> = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
     let tally_result: u64 = tally_vec[0];
 
+    // Print the result
     println!("\tVote result = {} / {}", tally_result, num_votes);
 
-    // Check the result
-    let expected_tally = votes.iter().sum();
+    // Check that the results match the expected result
+    // Note: this is not possible in production, since we would not know the plaintext inputs.
+
+    let expected_tally: u64 = votes.par_iter().sum();
     assert_eq!(tally_result, expected_tally);
 
     Ok(())
