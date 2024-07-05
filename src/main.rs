@@ -35,15 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // Try changing this number to see how the system scales with the number of parties.
     let num_parties: usize = 10;
-    println!("\t\x1b[1mParties:\x1b[0m {num_parties}");
-
-    // let default_params: Vec<Arc<bfv::BfvParameters>> =
-    //     bfv::BfvParameters::default_parameters_128(bits_needed);
-    // let params: Arc<bfv::BfvParameters> = default_params[1].clone();
-
-    // Degree: 2048
-    // Plaintext Modulus: 1032193
-    // Moduli: [18014398492704769]
+    println!("\t\x1b[1mParties:\x1b[0m {num_parties}");]
 
     // Set the parameters for the FHE scheme
 
