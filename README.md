@@ -1,32 +1,32 @@
-# fhe-workshop
+# FHE Workshop
+[![CI](https://github.com/auryn-macmillan/fhe-workshop/workflows/CI/badge.svg)](https://github.com/auryn-macmillan/fhe-workshop/actions)
 
-[![Crates.io](https://img.shields.io/crates/v/fhe-workshop.svg)](https://crates.io/crates/fhe-workshop)
-[![Docs.rs](https://docs.rs/fhe-workshop/badge.svg)](https://docs.rs/fhe-workshop)
-[![CI](https://github.com/gnosisguild/fhe-workshop/workflows/CI/badge.svg)](https://github.com/gnosisguild/fhe-workshop/actions)
+This repository contains a simple secret ballot implementation using Fully Homomorphic Encryption (FHE) to tally encrypted votes and only decrypt the output. It leverages [fhe.rs](https://github.com/tlepoint/fhe.rs) and is intended as a simple and practical demonstration developing an FHE application.
 
-## Installation
+This code was originally written for a workshop at [FHE Summit 2024, in Brussels](https://www.fhesummit.com/). As such, you'll find extensive comments in [main.rs](/src/main.rs) which served as a script for the workshop and give a high-level overview of FHE, what the various parameters mean, and each of the phases of the computation.
 
-### Cargo
+*Note: while the encryption scheme used in this repo, Brakerski/Fan-Vercauteren (BFV), is fully homomorphic, the secret ballot implementation only performs additions on the ciphertext inputs, so it it not a true demonstration of the fully homomorphic properties of the scheme.*
 
-* Install the rust toolchain in order to have cargo installed by following
-  [this](https://www.rust-lang.org/tools/install) guide.
-* run `cargo install fhe-workshop`
+## Usage
+
+1. Install the Rust toolchain to have cargo installed by following [this guide](https://www.rust-lang.org/tools/install).
+2. Clone this repo
+
+    `git clone https://github.com/auryn-macmillan/fhe-workshop.git`
+
+    `cd fhe-workshop`
+
+3. Run run the application
+
+    `cargo run`
 
 ## License
 
-Licensed under either of
+This project is licensed under either of the following, at your choice:
 
- * Apache License, Version 2.0
-   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license
-   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
-at your option.
+## Contributing
 
-## Contribution
-
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
-dual licensed as above, without any additional terms or conditions.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions are welcome! Please see our [contribution guide](CONTRIBUTING.md) for details.
