@@ -17,6 +17,27 @@ struct Party {
     pk_share: PublicKeyShare,
 }
 
+// This example demonstrates a simple secret ballot system using the combination of
+// Fully Homomorphic Encryption (FHE) and threshold cryptography (a multi-party computation).
+// Fully Homomorphic Encryption allows us to perform operations on encrypted data, while
+// threshold cryptography allows us to distribute the control of a secret key among multiple
+// parties, such that the key can only be used when a sufficient number of parties cooperate.
+//
+// In this example, we'll simulate several parties coordinating to create a shared key,
+// then simulate many voters encrypting their vote to that shared key, and use FHE to sum the
+// encrypted votes, producing an encrypted tally. The tally is then decrypted using a
+// threshold decryption scheme, where each party decrypts the tally to produce a decryption
+// share. The decryption shares are then aggregated to produce the plaintext tally.
+//
+// This implementation is a toy and is not secure for a real election. In a real election,
+// the votes would be encrypted independently by each voter and only the ciphertexts would be
+// published. The decryption shares would be produced by independent parties and only the
+// plaintext tally would be published. This would ensure that no party could determine the
+// individual votes or the tally without the cooperation of the other parties.
+//
+// This example is designed to demonstrate the concepts of FHE and threshold cryptography
+// and is not intended to be used in a production environment.
+
 fn main() -> Result<(), Box<dyn Error>> {
     let pb: ProgressBar = ProgressBar::new_spinner();
     pb.set_style(ProgressStyle::default_spinner());
@@ -37,20 +58,20 @@ fn main() -> Result<(), Box<dyn Error>> {
     // of the parties, but we'll still simulate the process.
     //
     // Try changing this number to see how the system scales with the number of parties.
-    let num_parties: usize = 10;
+    let num_parties: usize = 100;
     println!("\t\x1b[1mParties:\x1b[0m\t\t{num_parties}");
 
     // Set the parameters for the FHE scheme
 
-    // The degree of the polynomial modulus, usually denoted as `n` in the literature,
+    // The degree of the polynomial, usually denoted as `n` in the literature,
     // it determines the size of the ciphertext. A larger degree increases the security,
     // but will also increase the computation and storage.
     let degree: usize = 2048;
     println!("\t\x1b[1mDegree:\x1b[0m\t\t\t{degree}");
 
-    // The plaintext modulus, usually denoted as `t` in the literature, it determines
-    // the size of the plaintext space. Plaintexts are typically represented as integers
-    // modulo this value. A larger plaintext modulus allows for larger plaintexts.
+    // The plaintext modulus determines the size of the plaintext space. Quite literally, how
+    // large the plaintexts you want to represent can be. Plaintexts are typically represented
+    // as integers modulo this value. A larger plaintext modulus allows for larger plaintexts.
     // However, larger plaintext modulus also increase noise growth per operation,
     // which can limit the number of computations that can be performed on the ciphertexts.
     // In our case, each vote will be a single bit and we'll sum each vote to produce the tally.
@@ -72,11 +93,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     println!("\t\x1b[1mPlaintext Modulus:\x1b[0m\t{plaintext_modulus}");
 
-    // The moduli for the ciphertexts, usually denoted as `q` in the literature, are used to
-    // control the noise in the ciphertexts, using a technique called "modulus switching".
-    // Each modulus in the vector corresponds to a level in the computation, and computations
-    // are performed modulo the current level's modulus. A larger modulus allows for more
-    // computations, but also increases the computation and storage costs.
+    // The moduli for the ciphertexts are used to control the noise growth in the ciphertexts,
+    // using a technique called "modulus switching". Each modulus in the vector corresponds to
+    // a level in the computation, and computations are performed modulo the current level's modulus.
+    // A larger modulus allows for more computations, but also increases the computation and storage costs.
     let moduli: Vec<u64> = vec![0x3FFFFFFF000001];
     println!("\t\x1b[1mModuli:\x1b[0m\t\t\t{:?}", moduli);
 
@@ -91,7 +111,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // The CRP is used by each of the party members to generate their public key shares.
     // In this example, we're just grabbing some randomness seeded by the system.
-    // In a production environment, we need to ensure that no party can control or predict this randomness.
+    // In a production environment, we need to ensure that no party can control this randomness
+    // as it could weaken the underlying hardness assumptions of the encryption scheme or
+    // otherwise introduce vulnerabilities known to that party.
     let crp: CommonRandomPoly = CommonRandomPoly::new(&params, &mut thread_rng())?;
 
     // Create the parties and their keys
@@ -117,7 +139,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // Note: because the shared public key is the sum of the public key shares, the
     // the public key shares can be aggregated in any order. Meaning the public key shares can
-    // be generated asynchronously and aggregated in parallel as keys are published.
+    // be generated asynchronously and aggregated in parallel (although we're not doing that here).
     let pk: PublicKey = parties.iter().map(|p| p.pk_share.clone()).aggregate()?;
 
     // Create the plaintext votes
@@ -197,6 +219,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tally_vec: Vec<u64> = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
     let tally_result: u64 = tally_vec[0];
     pb.finish_and_clear();
+
     println!(
         "\t\x1b[1mTally Decryption time:\x1b[0m\t{:#?}",
         decryption_timer.elapsed()
