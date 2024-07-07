@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // Try changing this number to see how the system scales with the number of voters.
     let num_votes: usize = 1000;
-    println!("\t\x1b[1mVotes:\x1b[0m {num_votes}");
+    println!("\t\x1b[1mVotes:\x1b[0m\t\t\t{num_votes}");
 
     // The number of parties that will generate a shared key and decrypt the result.
     //
@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // Try changing this number to see how the system scales with the number of parties.
     let num_parties: usize = 10;
-    println!("\t\x1b[1mParties:\x1b[0m {num_parties}");
+    println!("\t\x1b[1mParties:\x1b[0m\t\t{num_parties}");
 
     // Set the parameters for the FHE scheme
 
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // it determines the size of the ciphertext. A larger degree increases the security,
     // but will also increase the computation and storage.
     let degree: usize = 2048;
-    println!("\t\x1b[1mDegree:\x1b[0m {degree}");
+    println!("\t\x1b[1mDegree:\x1b[0m\t\t\t{degree}");
 
     // The plaintext modulus, usually denoted as `t` in the literature, it determines
     // the size of the plaintext space. Plaintexts are typically represented as integers
@@ -70,8 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         800000..=899999 => 900001,
         _ => 1032193,
     };
-    // 1032193;
-    println!("\t\x1b[1mPlaintext Modulus:\x1b[0m {plaintext_modulus}");
+    println!("\t\x1b[1mPlaintext Modulus:\x1b[0m\t{plaintext_modulus}");
 
     // The moduli for the ciphertexts, usually denoted as `q` in the literature, are used to
     // control the noise in the ciphertexts, using a technique called "modulus switching".
@@ -79,7 +78,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // are performed modulo the current level's modulus. A larger modulus allows for more
     // computations, but also increases the computation and storage costs.
     let moduli: Vec<u64> = vec![0x3FFFFFFF000001];
-    println!("\t\x1b[1mModuli:\x1b[0m {:?}", moduli);
+    println!("\t\x1b[1mModuli:\x1b[0m\t\t\t{:?}", moduli);
 
     let params = bfv::BfvParametersBuilder::new()
         .set_degree(degree)
@@ -154,7 +153,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let encrypted_votes: Result<Vec<_>, _> = results.into_iter().collect();
     pb.finish_and_clear();
     println!(
-        "\t\x1b[1mTime to Encrypt Votes:\x1b[0m {:#?}",
+        "\t\x1b[1mTime to Encrypt Votes:\x1b[0m\t{:#?}",
         encryption_timer.elapsed()
     );
 
@@ -173,7 +172,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tally: Arc<Ciphertext> = Arc::new(sum);
     pb.finish_and_clear();
     println!(
-        "\t\x1b[1mTally Execution time:\x1b[0m {:#?}",
+        "\t\x1b[1mTally Execution time:\x1b[0m\t{:#?}",
         tally_timer.elapsed()
     );
 
@@ -199,20 +198,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tally_result: u64 = tally_vec[0];
     pb.finish_and_clear();
     println!(
-        "\t\x1b[1mTally Decryption time:\x1b[0m {:#?}",
+        "\t\x1b[1mTally Decryption time:\x1b[0m\t{:#?}",
         decryption_timer.elapsed()
+    );
+    println!(
+        "\t\x1b[1mTotal Execution time:\x1b[0m\t{:#?}",
+        main.elapsed()
     );
 
     // Print the result
     println!(
-        "\t\x1b[1mVote result:\x1b[0m: {} / {}",
+        "\t\x1b[1mVote result:\x1b[0m\t\t{} / {}",
         tally_result, num_votes
     );
-    println!(
-        "\t\x1b[1mTotal Execution time:\x1b[0m {:#?}",
-        main.elapsed()
-    );
-
     pb.finish_and_clear();
 
     // Check that the results match the expected result
