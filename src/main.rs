@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // The number of votes that will be cast.
     //
     // Try changing this number to see how the system scales with the number of voters.
-    let num_votes: usize = 1000;
+    let num_votes: usize = 10000;
     println!("\t\x1b[1mVotes:\x1b[0m\t\t\t{num_votes}");
 
     // The number of parties that will generate a shared key and decrypt the result.
@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // of the parties, but we'll still simulate the process.
     //
     // Try changing this number to see how the system scales with the number of parties.
-    let num_parties: usize = 100;
+    let num_parties: usize = 10000;
     println!("\t\x1b[1mParties:\x1b[0m\t\t{num_parties}");
 
     // Set the parameters for the FHE scheme
@@ -93,7 +93,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     println!("\t\x1b[1mPlaintext Modulus:\x1b[0m\t{plaintext_modulus}");
 
-    // The moduli for the ciphertexts are used to control the noise growth in the ciphertexts,
+    // The moduli are used to control the noise growth in the ciphertexts in a leveled FHE scheme,
     // using a technique called "modulus switching". Each modulus in the vector corresponds to
     // a level in the computation, and computations are performed modulo the current level's modulus.
     // A larger modulus allows for more computations, but also increases the computation and storage costs.
