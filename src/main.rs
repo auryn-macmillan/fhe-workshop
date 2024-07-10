@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("  \x1b[1mParties:\x1b[0m\t\t{num_parties}");
 
     // Set the parameters for the FHE scheme
-
+    //
     // The degree of the polynomial, usually denoted as `n` in the literature,
     // it determines the size of the ciphertext. A larger degree increases the security,
     // but will also increase the computation and storage.
@@ -238,8 +238,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     pb.finish_and_clear();
 
     // Check that the results match the expected result
+    //
     // Note: this is not possible in production, since we would not know the plaintext inputs.
-
     let expected_tally: u64 = votes.par_iter().sum();
     assert_eq!(tally_result, expected_tally);
 
