@@ -94,8 +94,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("  \x1b[1mPlaintext Modulus:\x1b[0m\t{plaintext_modulus}");
 
     // The moduli are used to control the noise growth in the ciphertexts in a leveled FHE scheme,
-    // using a technique called "modulus switching". Each modulus in the vector corresponds to
-    // a level in the computation, and computations are performed modulo the current level's modulus.
+    // using a technique called "modulus switching". Each modulus in the vector  is a large prime corresponding
+    // to a level in the computation, and computations are performed modulo the current level's modulus.
     // A larger modulus allows for more computations, but also increases the computation and storage costs.
     //
     // Note: In this example, we're using a single modulus, so we're not making use of modulus switching.
