@@ -48,8 +48,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // The number of votes that will be cast.
     //
     // Try changing this number to see how the system scales with the number of voters.
-    let num_votes: usize = 10000;
-    println!("\t\x1b[1mVotes:\x1b[0m\t\t\t{num_votes}");
+    let num_votes: usize = 1000;
+    println!("  \x1b[1mVotes:\x1b[0m\t\t{num_votes}");
 
     // The number of parties that will generate a shared key and decrypt the result.
     //
@@ -58,8 +58,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // of the parties, but we'll still simulate the process.
     //
     // Try changing this number to see how the system scales with the number of parties.
-    let num_parties: usize = 10000;
-    println!("\t\x1b[1mParties:\x1b[0m\t\t{num_parties}");
+    let num_parties: usize = 1000;
+    println!("  \x1b[1mParties:\x1b[0m\t\t{num_parties}");
 
     // Set the parameters for the FHE scheme
 
@@ -67,7 +67,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // it determines the size of the ciphertext. A larger degree increases the security,
     // but will also increase the computation and storage.
     let degree: usize = 2048;
-    println!("\t\x1b[1mDegree:\x1b[0m\t\t\t{degree}");
+    println!("  \x1b[1mDegree:\x1b[0m\t\t{degree}");
 
     // The plaintext modulus determines the size of the plaintext space. Quite literally, how
     // large the plaintexts you want to represent can be. Plaintexts are typically represented
@@ -91,14 +91,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         800000..=899999 => 900001,
         _ => 1032193,
     };
-    println!("\t\x1b[1mPlaintext Modulus:\x1b[0m\t{plaintext_modulus}");
+    println!("  \x1b[1mPlaintext Modulus:\x1b[0m\t{plaintext_modulus}");
 
     // The moduli are used to control the noise growth in the ciphertexts in a leveled FHE scheme,
     // using a technique called "modulus switching". Each modulus in the vector corresponds to
     // a level in the computation, and computations are performed modulo the current level's modulus.
     // A larger modulus allows for more computations, but also increases the computation and storage costs.
+    //
+    // Note: In this example, we're using a single modulus, so we're not making use of modulus switching.
+    // This is possible because we're only performing addition over the ciphertexts, which leads to little
+    // noise growth in the BFV encryption scheme. If our computation was also using multiplication, we would
+    // need to use multiple moduli to manage the noise growth.
     let moduli: Vec<u64> = vec![0x3FFFFFFF000001];
-    println!("\t\x1b[1mModuli:\x1b[0m\t\t\t{:?}", moduli);
+    println!("  \x1b[1mModuli:\x1b[0m\t\t{:?}", moduli);
 
     let params = bfv::BfvParametersBuilder::new()
         .set_degree(degree)
@@ -111,9 +116,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // The CRP is used by each of the party members to generate their public key shares.
     // In this example, we're just grabbing some randomness seeded by the system.
-    // In a production environment, we need to ensure that no party can control this randomness
-    // as it could weaken the underlying hardness assumptions of the encryption scheme or
-    // otherwise introduce vulnerabilities known to that party.
+    // In a production environment, we would use some public source of randomness that all
+    // of the parties agree on.
     let crp: CommonRandomPoly = CommonRandomPoly::new(&params, &mut thread_rng())?;
 
     // Create the parties and their keys
@@ -175,7 +179,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let encrypted_votes: Result<Vec<_>, _> = results.into_iter().collect();
     pb.finish_and_clear();
     println!(
-        "\t\x1b[1mTime to Encrypt Votes:\x1b[0m\t{:#?}",
+        "  \x1b[1mEncryption Time:\x1b[0m\t{:#?}",
         encryption_timer.elapsed()
     );
 
@@ -194,7 +198,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let tally: Arc<Ciphertext> = Arc::new(sum);
     pb.finish_and_clear();
     println!(
-        "\t\x1b[1mTally Execution time:\x1b[0m\t{:#?}",
+        "  \x1b[1mTallying time:\x1b[0m\t{:#?}",
         tally_timer.elapsed()
     );
 
@@ -221,17 +225,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     pb.finish_and_clear();
 
     println!(
-        "\t\x1b[1mTally Decryption time:\x1b[0m\t{:#?}",
+        "  \x1b[1mDecryption time:\x1b[0m\t{:#?}",
         decryption_timer.elapsed()
     );
-    println!(
-        "\t\x1b[1mTotal Execution time:\x1b[0m\t{:#?}",
-        main.elapsed()
-    );
+    println!("  \x1b[1mExecution time:\x1b[0m\t{:#?}", main.elapsed());
 
     // Print the result
     println!(
-        "\t\x1b[1mVote result:\x1b[0m\t\t{} / {}",
+        "  \x1b[1mVote result:\x1b[0m\t\t{} / {}",
         tally_result, num_votes
     );
     pb.finish_and_clear();
