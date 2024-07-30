@@ -165,12 +165,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     //
     // Note: encrypting votes is what takes the bulk of the execution time in this example.
     // In a production environment, this cost would be distributed across the voters.
+    //
+    // Note: votes are encrypted as an array of two integers, where the first column represents
+    // the vote against and the second column represents the vote for. This is done to demonstrate
+    // the ability to perform arithmetic operations over arrays of integers.
     pb.enable_steady_tick(Duration::from_millis(100));
     let encryption_timer: Instant = Instant::now();
     let results: Vec<_> = votes
         .par_iter()
         .map(|vote| {
-            let pt: Plaintext = Plaintext::try_encode(&[*vote], Encoding::poly(), &params).unwrap();
+            let pt: Plaintext =
+                Plaintext::try_encode(&[*vote, 1 - *vote].to_vec(), Encoding::poly(), &params)
+                    .unwrap();
             let ct: Ciphertext = pk.try_encrypt(&pt, &mut thread_rng()).unwrap();
             Ok::<fhe::bfv::Ciphertext, std::io::Error>(ct)
         })
@@ -221,7 +227,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .collect();
     let pt: Plaintext = decryption_shares.unwrap().into_iter().aggregate()?;
     let tally_vec: Vec<u64> = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
-    let tally_result: u64 = tally_vec[0];
+    let tally_result: Vec<u64> = [tally_vec[0], tally_vec[1]].to_vec();
     pb.finish_and_clear();
 
     println!(
@@ -231,16 +237,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("  \x1b[1mExecution time:\x1b[0m\t{:#?}", main.elapsed());
 
     // Print the result
-    println!(
-        "  \x1b[1mVote result:\x1b[0m\t\t{} / {}",
-        tally_result, num_votes
-    );
+    println!("  \x1b[1mVotes Against:\x1b[0m\t{}", tally_result[0]);
+    println!("  \x1b[1mVotes For:\x1b[0m\t\t{}", tally_result[1]);
     pb.finish_and_clear();
 
     // Check that the results match the expected result
     //
     // Note: this is not possible in production, since we would not know the plaintext inputs.
-    let expected_tally: u64 = votes.par_iter().sum();
+    let vote_sum: u64 = votes.par_iter().sum();
+    let expected_tally: Vec<u64> = [vote_sum as u64, num_votes as u64 - vote_sum].to_vec();
     assert_eq!(tally_result, expected_tally);
 
     Ok(())
