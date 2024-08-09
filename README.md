@@ -16,9 +16,13 @@ This code was originally written for a workshop at [FHE Summit 2024, in Brussels
 
     `cd fhe-workshop`
 
-3. Run run the application
+3. Run run the application in dev mode (proofs will not be generated)
 
-    `cargo run`
+    `RISC0_DEV_MODE=1 cargo run --release`
+
+4. Run the application (proves correct computation of the tally).
+
+    `RISC0_DEV_MODE=0 cargo run --release`
 
 ## License
 
