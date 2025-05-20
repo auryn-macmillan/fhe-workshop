@@ -1,10 +1,11 @@
+use csv;
 use fhe::{
     bfv::{self, Ciphertext, Encoding, Plaintext, PublicKey, SecretKey},
     mbfv::{AggregateIter, CommonRandomPoly, DecryptionShare, PublicKeyShare},
 };
 use fhe_traits::{FheDecoder, FheEncoder, FheEncrypter};
 use indicatif::{ProgressBar, ProgressStyle};
-use rand::{distributions::Uniform, prelude::Distribution, thread_rng};
+use rand::thread_rng;
 use rayon::prelude::*;
 use std::{
     error::Error,
@@ -17,39 +18,51 @@ struct Party {
     pk_share: PublicKeyShare,
 }
 
-// This example demonstrates a simple secret ballot system using the combination of
+#[derive(Debug)]
+struct Sums {
+    s_x: f64,
+    s_y: f64,
+    s_xx: f64,
+    s_xy: f64,
+}
+
+impl Default for Sums {
+    fn default() -> Self {
+        Sums {
+            s_x: 0.0,
+            s_y: 0.0,
+            s_xx: 0.0,
+            s_xy: 0.0,
+        }
+    }
+}
+
+// The example demonstrates collaborative linear regression using the combination of
 // Fully Homomorphic Encryption (FHE) and threshold cryptography (a multi-party computation).
 // Fully Homomorphic Encryption allows us to perform operations on encrypted data, while
 // threshold cryptography allows us to distribute the control of a secret key among multiple
 // parties, such that the key can only be used when a sufficient number of parties cooperate.
 //
 // In this example, we'll simulate several parties coordinating to create a shared key,
-// then simulate many voters encrypting their vote to that shared key, and use FHE to sum the
-// encrypted votes, producing an encrypted tally. The tally is then decrypted using a
-// threshold decryption scheme, where each party decrypts the tally to produce a decryption
-// share. The decryption shares are then aggregated to produce the plaintext tally.
-//
-// This implementation is a toy and is not secure for a real election. In a real election,
-// the votes would be encrypted independently by each voter and only the ciphertexts would be
-// published. The decryption shares would be produced by independent parties and only the
-// plaintext tally would be published. This would ensure that no party could determine the
-// individual votes or the tally without the cooperation of the other parties.
-//
-// This example is designed to demonstrate the concepts of FHE and threshold cryptography
-// and is not intended to be used in a production environment.
+// we'll then simulate several parties preprocessing their share of the data, encrypting that
+// preprocessed data to the shared key, using FHE to sum the encrypted data together, and finally
+// decrypting the result using the shared key. The data will be a set of points in 2D space,
+// and the result will be a linear regression line that fits the data.
 
 fn main() -> Result<(), Box<dyn Error>> {
     let pb: ProgressBar = ProgressBar::new_spinner();
     pb.set_style(ProgressStyle::default_spinner());
     let main: Instant = Instant::now();
 
-    println!("\n\x1b[1mPractical FHE Workshop: Secret Ballot\x1b[0m");
+    println!("\n\x1b[1mPractical FHE Workshop: Linear Regression\x1b[0m");
 
-    // The number of votes that will be cast.
-    //
-    // Try changing this number to see how the system scales with the number of voters.
-    let num_votes: usize = 1000;
-    println!("  \x1b[1mVotes:\x1b[0m\t\t{num_votes}");
+    // The precision of the FHE computation
+    // As BFV only deals with integers, we need to scale the floating point numbers
+    // to integers. The precision is the number of decimal places we want to keep.
+    // In this example, we're using 4 decimal places, so we multiply by 10^4.
+    // Try changing this number to see how the system scales with the precision.
+    let precision: f64 = 10.0_f64.powi(4);
+    println!("  \x1b[1mPrecision:\x1b[0m\t\t{precision}");
 
     // The number of parties that will generate a shared key and decrypt the result.
     //
@@ -74,9 +87,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // as integers modulo this value. A larger plaintext modulus allows for larger plaintexts.
     // However, larger plaintext modulus also increase noise growth per operation,
     // which can limit the number of computations that can be performed on the ciphertexts.
-    // In our case, each vote will be a single bit and we'll sum each vote to produce the tally.
-    // The upper bound on the plaintext size is equal to the number of votes cast, so a plaintext
-    // modulus of 1032193 is sufficient for a little over 1M votes.
     let plaintext_modulus: u64 = 1032193;
     println!("  \x1b[1mPlaintext Modulus:\x1b[0m\t{plaintext_modulus}");
 
@@ -92,6 +102,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let moduli: Vec<u64> = vec![0x3FFFFFFF000001];
     println!("  \x1b[1mModuli:\x1b[0m\t\t{:?}", moduli);
 
+    // Encode the parameters for the BFV scheme
     let params = bfv::BfvParametersBuilder::new()
         .set_degree(degree)
         .set_plaintext_modulus(plaintext_modulus)
@@ -122,8 +133,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Aggregate the public keys
     //
-    // The public keys are aggregated to create a single public key that can be used to encrypt
-    // the votes. This is done by summing the public key shares together.
+    // The public keys are aggregated to create a single public key that can be used to try_encrypt
+    // the inputs. This is done by summing the public key shares together.
     //
     // Note: because the public key shares are generated using the same CRP, the public key
     // shares are compatible and can be summed together.
@@ -133,43 +144,102 @@ fn main() -> Result<(), Box<dyn Error>> {
     // be generated asynchronously and aggregated in parallel (although we're not doing that here).
     let pk: PublicKey = parties.iter().map(|p| p.pk_share.clone()).aggregate()?;
 
-    // Create the plaintext votes
-    //
-    // Each voter will cast a 1 for yes or a 0 for no. We'll simulate this by generating
-    // a random bit for each voter.
-    let dist: Uniform<u64> = Uniform::new_inclusive(0, 1);
-    let votes: Vec<u64> = (0..num_votes)
-        .into_par_iter()
-        .map(|_| dist.sample(&mut thread_rng()))
-        .collect();
+    // Read data
+    // let file_path = "../../data/winequality_0.csv";
+    // let mut rdr = csv::Reader::from_path(file_path)?;
+    // let mut data: Vec<(f64, f64)> = Vec::new();
+    // for result in rdr.records() {
+    //     let record = result?;
+    //     let x: f64 = record[0].parse()?;
+    //     let y: f64 = record[1].parse()?;
+    //     data.push((x, y));
+    // }
 
-    // Encrypt the votes
-    //
-    // Each vote is encrypted using the shared public key.
-    //
-    // Note: In a production environment, the votes would be encrypted independently by each
-    // of the voters and only the ciphertexts would be published.
-    //
-    // Note: encrypting votes is what takes the bulk of the execution time in this example.
-    // In a production environment, this cost would be distributed across the voters.
-    //
-    // Note: votes are encrypted as an array of two integers, where the first column represents
-    // the vote against and the second column represents the vote for. This is done to demonstrate
-    // the ability to perform arithmetic operations over arrays of integers.
+    let mut datasets: Vec<Vec<(f64, f64)>> = Vec::new();
+
+    // Iterate over the dataset file names
+    for i in 0..4 {
+        let file_path = format!("../../data/winequality_{}.csv", i);
+        let mut rdr = csv::Reader::from_path(file_path)?;
+        let mut data: Vec<(f64, f64)> = Vec::new();
+
+        // Read each record and parse the values
+        for result in rdr.records() {
+            let record = result?;
+            let x: f64 = record[0].parse()?;
+            let y: f64 = record[1].parse()?;
+            data.push((x, y));
+        }
+
+        // Add the dataset to the outer vector
+        datasets.push(data);
+    }
+
+    // Preprocess the data
+    let mut processed_data: Vec<Sums> = Vec::new();
+
+    for data in &datasets {
+        let mut sums = Sums::default();
+
+        for &(x, y) in data {
+            sums.s_x += x;
+            sums.s_y += y;
+            sums.s_xx += x * x;
+            sums.s_xy += x * y;
+        }
+
+        processed_data.push(sums);
+    }
+
+    // Calculate expected results
+    let mut aggregated_sums = Sums {
+        s_x: 0.0,
+        s_y: 0.0,
+        s_xx: 0.0,
+        s_xy: 0.0,
+    };
+
+    // Aggregate the sums across all datasets
+    let mut total_n = 0.0;
+    for (_, data) in datasets.iter().enumerate() {
+        let n = data.len() as f64;
+        total_n += n;
+
+        for &(x, y) in data {
+            aggregated_sums.s_x += x;
+            aggregated_sums.s_y += y;
+            aggregated_sums.s_xx += x * x;
+            aggregated_sums.s_xy += x * y;
+        }
+    }
+
+    // Encrypt the data
     pb.enable_steady_tick(Duration::from_millis(100));
     let encryption_timer: Instant = Instant::now();
-    let results: Vec<_> = votes
+
+    let results: Vec<_> = processed_data
         .par_iter()
-        .map(|vote| {
-            let pt: Plaintext =
-                Plaintext::try_encode(&[*vote, 1 - *vote].to_vec(), Encoding::poly(), &params)
-                    .unwrap();
+        .map(|sums| {
+            let pt: Plaintext = Plaintext::try_encode(
+                &[
+                    (sums.s_x * precision) as i64,
+                    (sums.s_y * precision) as i64,
+                    (sums.s_xx * precision) as i64,
+                    (sums.s_xy * precision) as i64,
+                ]
+                .to_vec(),
+                Encoding::poly(),
+                &params,
+            )
+            .unwrap();
+
             let ct: Ciphertext = pk.try_encrypt(&pt, &mut thread_rng()).unwrap();
+
             Ok::<fhe::bfv::Ciphertext, std::io::Error>(ct)
         })
         .collect();
 
-    let encrypted_votes: Result<Vec<_>, _> = results.into_iter().collect();
+    let encrypted_data: Result<Vec<_>, _> = results.into_iter().collect();
     pb.finish_and_clear();
     println!(
         "  \x1b[1mEncryption Time:\x1b[0m\t{:#?}",
@@ -177,32 +247,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     pb.enable_steady_tick(Duration::from_millis(100));
-    let tally_timer: Instant = Instant::now();
-    // Tally the votes
-    //
-    // The votes are tallied by summing the encrypted vote ciphertexts together.
-    // The result is an encrypted tally of the votes.
-    // This is the real magic of homomorphic encryption, we can perform operations on the
-    // ciphertexts that correspond to operations on the plaintexts!
+    let sum_timer: Instant = Instant::now();
+
+    // Sum the encrypted data
     let mut sum: Ciphertext = Ciphertext::zero(&params);
-    for vote in encrypted_votes.unwrap().iter() {
-        sum += vote;
+    for ct in encrypted_data.unwrap().iter() {
+        sum += ct;
     }
     let tally: Arc<Ciphertext> = Arc::new(sum);
     pb.finish_and_clear();
-    println!(
-        "  \x1b[1mTallying time:\x1b[0m\t{:#?}",
-        tally_timer.elapsed()
-    );
+    println!("  \x1b[1mTallying time:\x1b[0m\t{:#?}", sum_timer.elapsed());
 
-    // Decrypt the tally
-    //
-    // The tally is decrypted by each of the parties to produce a decryption share.
-    // The decryption shares are then aggregated to produce the plaintext tally.
-    //
-    // Note: As with the public key shares, aggregation of the decryption shares simply involves
-    // summing them together. This means the decryption shares can be aggregated in any order
-    // and can be generated asynchronously and aggregated in parallel as shares are published.
+    // Decrypt the result
     pb.enable_steady_tick(Duration::from_millis(100));
     let decryption_timer: Instant = Instant::now();
     let decryption_shares: Result<Vec<DecryptionShare>, _> = parties
@@ -213,27 +269,67 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
         .collect();
     let pt: Plaintext = decryption_shares.unwrap().into_iter().aggregate()?;
-    let tally_vec: Vec<u64> = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
-    let tally_result: Vec<u64> = [tally_vec[0], tally_vec[1]].to_vec();
-    pb.finish_and_clear();
+    let decrypted: Vec<u64> = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
+    let decrypted_s_x: f64 = decrypted[0] as f64 / precision;
+    let decrypted_s_y: f64 = decrypted[1] as f64 / precision;
+    let decrypted_s_xx: f64 = decrypted[2] as f64 / precision;
+    let decrypted_s_xy: f64 = decrypted[3] as f64 / precision;
 
+    pb.finish_and_clear();
     println!(
-        "  \x1b[1mDecryption time:\x1b[0m\t{:#?}",
+        "  \x1b[1mDecryption Time:\x1b[0m\t{:#?}",
         decryption_timer.elapsed()
     );
+
     println!("  \x1b[1mExecution time:\x1b[0m\t{:#?}", main.elapsed());
 
-    // Print the result
-    println!("  \x1b[1mVotes Against:\x1b[0m\t{}", tally_result[0]);
-    println!("  \x1b[1mVotes For:\x1b[0m\t\t{}", tally_result[1]);
-    pb.finish_and_clear();
+    // Calculate the slope and intercept for the aggregated data
+    let (expected_slope, expected_intercept) = calculate_slope_and_intercept(
+        total_n,
+        aggregated_sums.s_x,
+        aggregated_sums.s_y,
+        aggregated_sums.s_xx,
+        aggregated_sums.s_xy,
+    );
 
-    // Check that the results match the expected result
-    //
-    // Note: this is not possible in production, since we would not know the plaintext inputs.
-    let vote_sum: u64 = votes.par_iter().sum();
-    let expected_tally: Vec<u64> = [vote_sum as u64, num_votes as u64 - vote_sum].to_vec();
-    assert_eq!(tally_result, expected_tally);
+    println!(
+        "  \x1b[1mExpected Sums:\x1b[0m\tS_x: {}, S_y: {}, S_xx: {}, S_xy: {}",
+        aggregated_sums.s_x, aggregated_sums.s_y, aggregated_sums.s_xx, aggregated_sums.s_xy
+    );
+    println!(
+        "  \x1b[1mExpected Results:\x1b[0m\tIntercept: {}, Slope: {}",
+        expected_intercept, expected_slope
+    );
+
+    // Calculate the slope and intercept for the decrypted data
+    let (decrypted_slope, decrypted_intercept) = calculate_slope_and_intercept(
+        total_n,
+        decrypted_s_x,
+        decrypted_s_y,
+        decrypted_s_xx,
+        decrypted_s_xy,
+    );
+
+    println!(
+        "  \x1b[1mDecrypted Sums:\x1b[0m\tS_x: {}, S_y: {}, S_xx: {}, S_xy: {}",
+        decrypted_s_x, decrypted_s_y, decrypted_s_xx, decrypted_s_xy
+    );
+    println!(
+        "  \x1b[1mDecrypted Results:\x1b[0m\tIntercept: {}, Slope: {}",
+        decrypted_intercept, decrypted_slope
+    );
 
     Ok(())
+}
+
+fn calculate_slope_and_intercept(
+    total_n: f64,
+    s_x: f64,
+    s_y: f64,
+    s_xx: f64,
+    s_xy: f64,
+) -> (f64, f64) {
+    let slope = (total_n * s_xy - s_x * s_y) / (total_n * s_xx - s_x * s_x);
+    let intercept = (s_y - slope * s_x) / total_n;
+    (slope, intercept)
 }
