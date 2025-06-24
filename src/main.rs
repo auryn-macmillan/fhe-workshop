@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // of the parties, but we'll still simulate the process.
     //
     // Try changing this number to see how the system scales with the number of parties.
-    let num_parties: usize = 1000;
+    let num_parties: usize = 9;
     println!("  \x1b[1mParties:\x1b[0m\t\t{num_parties}");
 
     // Set the parameters for the FHE scheme
@@ -123,7 +123,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Create the parties and their keys
     //
     // Each party generates a secret key share and a public key share using the CRP.
-    let parties: Vec<Party> = (0..num_parties)
+    let sub_parties: Vec<Party> = (0..num_parties)
         .into_par_iter()
         .map(|_| {
             let sk_share: SecretKey = SecretKey::random(&params, &mut thread_rng());
@@ -132,6 +132,26 @@ fn main() -> Result<(), Box<dyn Error>> {
             Party { sk_share, pk_share }
         })
         .collect();
+
+    // Generate three sub-party keys
+    //
+
+    let pk_a: PublicKeyShare = (0..num_parties / 3)
+        .into_iter()
+        .map(|p| sub_parties[p].pk_share.clone())
+        .aggregate()?;
+
+    let pk_b: PublicKeyShare = (num_parties / 3..(2 * num_parties) / 3)
+        .into_iter()
+        .map(|p| sub_parties[p].pk_share.clone())
+        .aggregate()?;
+
+    let pk_c: PublicKeyShare = ((2 * num_parties) / 3..num_parties)
+        .into_iter()
+        .map(|p| sub_parties[p].pk_share.clone())
+        .aggregate()?;
+
+    let parties: Vec<PublicKeyShare> = vec![pk_a, pk_b, pk_c];
 
     // Aggregate the public keys
     //
@@ -144,7 +164,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Note: because the shared public key is the sum of the public key shares, the
     // the public key shares can be aggregated in any order. Meaning the public key shares can
     // be generated asynchronously and aggregated in parallel (although we're not doing that here).
-    let pk: PublicKey = parties.iter().map(|p| p.pk_share.clone()).aggregate()?;
+    let pk: PublicKey = parties.iter().map(|p| p.clone()).aggregate()?;
 
     // Create the plaintext votes
     //
@@ -218,14 +238,30 @@ fn main() -> Result<(), Box<dyn Error>> {
     // and can be generated asynchronously and aggregated in parallel as shares are published.
     pb.enable_steady_tick(Duration::from_millis(100));
     let decryption_timer: Instant = Instant::now();
-    let decryption_shares: Result<Vec<DecryptionShare>, _> = parties
+    let sub_decryption_shares: Result<Vec<DecryptionShare>, std::io::Error> = sub_parties
         .par_iter()
         .map(|party| {
             let sh = DecryptionShare::new(&party.sk_share, &tally, &mut thread_rng()).unwrap();
             Ok::<fhe::mbfv::DecryptionShare, std::io::Error>(sh)
         })
         .collect();
-    let pt: Plaintext = decryption_shares.unwrap().into_iter().aggregate()?;
+
+    let sub_decryption_shares = sub_decryption_shares?;
+
+    let mut shares_iter = sub_decryption_shares.into_iter();
+    let shares_a: Vec<DecryptionShare> = shares_iter.by_ref().take(num_parties / 3).collect();
+    let shares_b: Vec<DecryptionShare> = shares_iter.by_ref().take(num_parties / 3).collect();
+    let shares_c: Vec<DecryptionShare> = shares_iter.collect(); // Remaining shares
+
+    let decryption_share_a: DecryptionShare = shares_a.into_iter().aggregate()?;
+    let decryption_share_b: DecryptionShare = shares_b.into_iter().aggregate()?;
+    let decryption_share_c: DecryptionShare = shares_c.into_iter().aggregate()?;
+
+    let decryption_shares: Vec<DecryptionShare> =
+        vec![decryption_share_a, decryption_share_b, decryption_share_c];
+
+    let pt: Plaintext = decryption_shares.into_iter().aggregate()?;
+
     let tally_vec: Vec<u64> = Vec::<u64>::try_decode(&pt, Encoding::poly())?;
     let tally_result: Vec<u64> = [tally_vec[0], tally_vec[1]].to_vec();
     pb.finish_and_clear();
